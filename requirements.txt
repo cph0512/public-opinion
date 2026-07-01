@@ -2,3 +2,5 @@ requests>=2.31
 PyYAML>=6.0
 # 選用:AI 摘要(未安裝 / 未設定金鑰時會自動略過)
 anthropic>=0.40
+# 互動式搜尋網頁(streamlit_app.py 用)
+streamlit>=1.30
