@@ -1,0 +1,73 @@
+{% set colors = {
+    'reddit': 'bg-orange-500',
+    'dcard': 'bg-cyan-500',
+    'threads': 'bg-slate-800',
+    'facebook': 'bg-blue-600'
+} %}
+
+{% if error %}
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+        {{ error }}
+    </div>
+{% else %}
+
+    <div class="mb-4 text-sm text-slate-600 flex items-center gap-2">
+        共 <span class="font-semibold text-slate-900">{{ posts|length }}</span> 筆結果
+        <span class="text-slate-400">·</span>
+        關鍵字:
+        {% for k in keywords %}
+            <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">{{ k }}</span>
+        {% endfor %}
+    </div>
+
+    {% if summary %}
+    <section class="bg-gradient-to-br from-purple-50 via-white to-blue-50 border border-purple-200 rounded-2xl p-6 mb-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            🧠 <span>AI 摘要</span>
+            <span class="ml-auto text-xs text-slate-400 font-normal">by Claude</span>
+        </h2>
+        <div class="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap leading-relaxed">{{ summary }}</div>
+    </section>
+    {% endif %}
+
+    {% if not posts %}
+        <div class="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500">
+            沒有抓到符合條件的貼文,試試放寬時間範圍或換個關鍵字。
+        </div>
+    {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {% for post in posts %}
+            <article class="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md hover:border-slate-300 transition">
+                <div class="flex items-center gap-2 text-xs mb-2">
+                    <span class="{{ colors.get(post.platform, 'bg-slate-500') }} text-white px-2 py-0.5 rounded-full font-medium">
+                        {{ platform_labels.get(post.platform, post.platform) }}
+                    </span>
+                    <span class="text-slate-500">
+                        {{ post.created_at.strftime('%Y-%m-%d %H:%M') if post.created_at else '時間未知' }}
+                    </span>
+                    {% if post.author %}
+                        <span class="text-slate-400">· @{{ post.author }}</span>
+                    {% endif %}
+                </div>
+                <h3 class="font-semibold text-slate-900 mb-1.5 leading-snug">
+                    <a href="{{ post.url }}" target="_blank" rel="noopener"
+                       class="hover:text-orange-600 hover:underline">
+                        {{ post.title or post.preview or '(無標題)' }}
+                    </a>
+                </h3>
+                {% if post.preview and post.preview != post.title %}
+                <p class="text-sm text-slate-600 mb-2.5 line-clamp-2">{{ post.preview }}</p>
+                {% endif %}
+                <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+                    <span>👍 {{ post.score }}</span>
+                    <span>💬 {{ post.num_comments }}</span>
+                    {% if post.matched_keywords %}
+                        <span class="text-slate-400">· 命中:{{ post.matched_keywords|join('、') }}</span>
+                    {% endif %}
+                </div>
+            </article>
+        {% endfor %}
+        </div>
+    {% endif %}
+
+{% endif %}

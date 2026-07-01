@@ -4,3 +4,7 @@ PyYAML>=6.0
 anthropic>=0.40
 # 互動式搜尋網頁(streamlit_app.py 用)
 streamlit>=1.30
+# FastAPI 版網頁(app.py / Cloud Run 部署用)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+jinja2>=3.1
