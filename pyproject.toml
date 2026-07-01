@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "public-opinion"
+version = "0.1.0"
+description = "每日輿情資訊收集器 — 從 Reddit / Dcard / Threads / Facebook 搜尋你關心的主題"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+ai = ["anthropic>=0.40"]
+
+[project.scripts]
+public-opinion = "public_opinion.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

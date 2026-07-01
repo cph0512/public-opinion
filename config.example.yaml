@@ -1,0 +1,42 @@
+# 複製成 config.yaml 後修改。config.yaml 已被 .gitignore 忽略,不會被 commit。
+
+# 你想追蹤的主題 / 關鍵字(可多個)
+keywords:
+  - "範例關鍵字"
+  # - "你的品牌"
+  # - "某個議題"
+
+platforms:
+  reddit:
+    enabled: true
+    limit: 25
+    subreddits: []      # 留空 = 全站搜尋;或指定 ["taiwan", "technology"]
+    sort: "new"         # new / relevance / top / hot / comments
+  dcard:
+    enabled: true
+    limit: 30
+  threads:
+    enabled: false      # 需要 THREADS_ACCESS_TOKEN(見 .env.example)
+    limit: 25
+    search_type: "TOP"  # TOP 或 RECENT
+  facebook:
+    enabled: false      # 需要 FACEBOOK_ACCESS_TOKEN,且只能讀你管理的粉專
+    page_ids: []        # 例如 ["1234567890"]
+    limit: 25
+
+filters:
+  since_hours: 24       # 只保留最近 N 小時的貼文
+  min_score: 0          # 分數 / 讚數門檻(主要作用於 Reddit)
+
+summary:
+  enabled: true         # 需要 ANTHROPIC_API_KEY;沒設定會自動略過
+  model: "claude-opus-4-8"
+  language: "zh-TW"
+  max_posts: 60         # 丟給模型摘要的最大貼文數(控制成本)
+
+output:
+  dir: "reports"        # 報告輸出資料夾
+
+email:
+  enabled: false        # 設 true 並在 .env 填 SMTP 設定;只寄「有新內容」的日子
+  only_when_new: true   # 沒有新貼文時不寄信

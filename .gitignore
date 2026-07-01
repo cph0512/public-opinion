@@ -1,0 +1,19 @@
+# secrets & local config — never commit these
+.env
+config.yaml
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+*.log
+
+# NOTE: state/ and reports/ are intentionally committed so that the daily
+# GitHub Action can persist dedup state and report history across runs
+# (the runner is ephemeral). Delete them from tracking if you'd rather keep
+# results out of git.

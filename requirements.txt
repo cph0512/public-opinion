@@ -1,0 +1,4 @@
+requests>=2.31
+PyYAML>=6.0
+# 選用:AI 摘要(未安裝 / 未設定金鑰時會自動略過)
+anthropic>=0.40
