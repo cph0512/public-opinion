@@ -80,6 +80,19 @@ streamlit run streamlit_app.py
 > Threads / Facebook 沒填 token 就不會出現結果(平台限制);Reddit 最穩定,
 > Dcard 在雲端 IP 有時會被 Cloudflare 擋。
 
+### 部署到 GCP Cloud Run(替代方案,全程瀏覽器)
+
+repo 內已附 `Dockerfile`,可直接用 Cloud Run 的「從 GitHub 持續部署」:
+
+1. <https://console.cloud.google.com> 建立專案並啟用 Billing(輕度使用大多落在免費額度)。
+2. 搜尋 **Cloud Run** → **Create service** → 選 **Continuously deploy from a repository**
+   → **Set up with Cloud Build** → 連結 GitHub → 選 `cph0512/public-opinion`、branch `main`
+   → Build type 選 **Dockerfile**。
+3. Region 選 `asia-east1`(台灣);Authentication 選 **Allow unauthenticated invocations**。
+4. 展開 **Container(s) → Variables & Secrets**,加環境變數:
+   `OLLAMA_API_KEY`、`OLLAMA_MODEL`、(選用)`REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET`。
+5. **Create**。build 完會得到 `https://xxx.a.run.app` 網址;之後 push 到 main 會自動重新部署。
+
 ---
 
 ## 設定(`config.yaml`)
