@@ -7,6 +7,10 @@ keywords:
   # - "某個議題"
 
 platforms:
+  ptt:
+    enabled: true
+    limit: 20
+    boards: ["Gossiping", "WomenTalk", "Boy-Girl"]  # 要搜尋的看板
   reddit:
     enabled: true
     limit: 25
@@ -29,8 +33,11 @@ filters:
   min_score: 0          # 分數 / 讚數門檻(主要作用於 Reddit)
 
 summary:
-  enabled: true         # 需要 ANTHROPIC_API_KEY;沒設定會自動略過
-  model: "claude-opus-4-8"
+  enabled: true
+  provider: "anthropic"           # "anthropic"(Claude API)或 "ollama"(本機模型)
+  model: "claude-opus-4-8"        # provider=anthropic 時使用;需要 ANTHROPIC_API_KEY
+  ollama_base_url: "http://localhost:11434"   # provider=ollama 時使用
+  ollama_model: "kimi-k2"                     # 填 `ollama list` 顯示的模型名稱
   language: "zh-TW"
   max_posts: 60         # 丟給模型摘要的最大貼文數(控制成本)
 

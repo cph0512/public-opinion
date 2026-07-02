@@ -1,11 +1,17 @@
-"""用 Claude 產生每日輿情摘要(選用)。
+"""產生每日輿情摘要(選用)。
 
-需要 ANTHROPIC_API_KEY;未安裝 anthropic 套件或未設定金鑰時回傳 None,流程照常進行。
+支援兩種 AI 後端(由 config.summary_provider 決定):
+- "anthropic" — Claude API,需要 ANTHROPIC_API_KEY
+- "ollama"    — 本機 Ollama(例如 kimi-k2),不需要雲端金鑰
+
+任一後端失敗時回傳 None,主流程照常進行、不會中斷。
 """
 
 from __future__ import annotations
 
 import logging
+
+import requests
 
 from ..config import Config
 from ..models import Post
@@ -14,14 +20,62 @@ log = logging.getLogger(__name__)
 
 
 def generate_summary(posts: list[Post], config: Config) -> str | None:
-    if not config.summary_enabled:
+    if not config.summary_enabled or not posts:
         return None
+
+    provider = (config.summary_provider or "anthropic").strip().lower()
+    prompt = _build_prompt(posts[: config.summary_max_posts], config)
+
+    if provider == "ollama":
+        return _ollama_summary(prompt, config)
+    return _anthropic_summary(prompt, config)
+
+
+# ---------------- Ollama(本機模型,例如 Kimi)----------------
+
+def _ollama_summary(prompt: str, config: Config) -> str | None:
+    base = (config.ollama_base_url or "http://localhost:11434").rstrip("/")
+    model = config.ollama_model or "kimi-k2"
+    headers = {}
+    if config.ollama_api_key:
+        # Ollama Cloud(https://ollama.com)用 Bearer key 驗證;本機 Ollama 會忽略此 header
+        headers["Authorization"] = f"Bearer {config.ollama_api_key}"
+    try:
+        resp = requests.post(
+            f"{base}/api/chat",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            headers=headers,
+            timeout=600,  # 大模型可能很慢,寬一點
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        log.warning(
+            "[summary] 連不到 Ollama(%s)。請確認 Ollama 有在執行(選單列圖示或 `ollama serve`)。",
+            base,
+        )
+        return None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[summary] Ollama 呼叫失敗(model=%s):%s", model, exc)
+        return None
+
+    text = ((data.get("message") or {}).get("content") or "").strip()
+    if not text:
+        log.warning("[summary] Ollama 回傳空內容(model=%s)。", model)
+        return None
+    return text
+
+
+# ---------------- Anthropic(Claude API)----------------
+
+def _anthropic_summary(prompt: str, config: Config) -> str | None:
     if not config.anthropic_api_key:
         log.info("[summary] 未設定 ANTHROPIC_API_KEY,略過 AI 摘要。")
         return None
-    if not posts:
-        return None
-
     try:
         import anthropic
     except ImportError:
@@ -29,8 +83,6 @@ def generate_summary(posts: list[Post], config: Config) -> str | None:
         return None
 
     client = anthropic.Anthropic(api_key=config.anthropic_api_key)
-    prompt = _build_prompt(posts[: config.summary_max_posts], config)
-
     try:
         resp = client.messages.create(
             model=config.summary_model,
@@ -48,6 +100,8 @@ def generate_summary(posts: list[Post], config: Config) -> str | None:
     text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
     return text.strip() or None
 
+
+# ---------------- 共用 prompt ----------------
 
 def _build_prompt(posts: list[Post], config: Config) -> str:
     keywords = "、".join(config.keywords)

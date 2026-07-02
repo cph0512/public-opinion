@@ -1,236 +1,244 @@
-"""輿情搜尋 — Streamlit 互動網頁。
+"""輿情搜尋器 — 互動式網頁介面。
 
-重用 src/public_opinion 底下的 build_collectors / Config,讓使用者可以在瀏覽器
-輸入關鍵字、選平台、拉時間範圍與分數門檻,即時抓取並顯示各平台貼文。
-若偵測到 ANTHROPIC_API_KEY,額外提供 AI 摘要選項。
+在網頁上輸入關鍵字、選擇平台,即時搜尋 Reddit / Dcard(以及設定 token 後的
+Threads / Facebook)的相關貼文,並可一鍵用 Claude 產生 AI 摘要。
+
+本機執行:  streamlit run streamlit_app.py
+雲端部署:  見 README「部署到 Streamlit Community Cloud」章節(全程用瀏覽器)。
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# 讓 src/ 底下的 public_opinion 套件可被匯入(不需先 pip install -e .)
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import streamlit as st
 
-# 讓 `from public_opinion...` 可以匯入 src/ 底下的套件。
-_REPO_ROOT = Path(__file__).resolve().parent
-_SRC = _REPO_ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+from public_opinion.analysis.summarizer import generate_summary
+from public_opinion.collectors import build_collectors
+from public_opinion.config import Config, PlatformConfig
 
-from public_opinion.analysis.summarizer import generate_summary  # noqa: E402
-from public_opinion.collectors import build_collectors  # noqa: E402
-from public_opinion.config import Config, PlatformConfig  # noqa: E402
-from public_opinion.models import Post  # noqa: E402
-
-
-PLATFORM_LABELS = {
-    "reddit": "Reddit",
-    "dcard": "Dcard",
-    "threads": "Threads",
-    "facebook": "Facebook",
-}
-
-PLATFORM_COLORS = {
-    "reddit": "#FF4500",
-    "dcard": "#00B8C4",
-    "threads": "#111111",
-    "facebook": "#1877F2",
+PLATFORM_META = {
+    "ptt": ("PTT", "🟢"),
+    "reddit": ("Reddit", "🟠"),
+    "dcard": ("Dcard", "🔵"),
+    "threads": ("Threads", "⚫"),
+    "facebook": ("Facebook", "🔷"),
 }
 
 
-def get_secret(name: str, default: str = "") -> str:
-    """先讀 st.secrets,再退回環境變數;讀不到就回傳預設值。"""
+def secret(name: str, default: str = "") -> str:
+    """優先讀 Streamlit secrets,其次讀環境變數。"""
     try:
-        value = st.secrets.get(name)  # type: ignore[attr-defined]
-        if value:
-            return str(value)
-    except (FileNotFoundError, KeyError, AttributeError, Exception):  # noqa: BLE001
+        if name in st.secrets:  # type: ignore[operator]
+            return str(st.secrets[name])
+    except Exception:
         pass
     return os.environ.get(name, default)
 
 
-def build_runtime_config(
-    keywords: list[str],
-    selected_platforms: list[str],
-    since_hours: int,
-    min_score: int,
-    summary_language: str = "zh-TW",
-) -> Config:
-    """依 UI 選項組出一個記憶體內的 Config,不讀 config.yaml。"""
-    platforms: dict[str, PlatformConfig] = {}
-    for name in PLATFORM_LABELS:
-        opts: dict[str, object] = {}
-        if name == "reddit":
-            opts = {"limit": 25, "sort": "new", "subreddits": []}
-        elif name == "dcard":
-            opts = {"limit": 30}
-        elif name == "threads":
-            opts = {"limit": 25, "search_type": "TOP"}
-        elif name == "facebook":
-            opts = {"limit": 25, "page_ids": []}
-        platforms[name] = PlatformConfig(
-            enabled=(name in selected_platforms),
-            options=opts,
+st.set_page_config(page_title="輿情搜尋器", page_icon="📡", layout="wide")
+
+st.markdown(
+    """
+    <style>
+      .post-card{border:1px solid #e6e6e6;border-radius:12px;padding:14px 16px;
+                 margin-bottom:10px;background:#fff}
+      .post-meta{color:#888;font-size:0.85rem;margin-top:4px}
+      .badge{display:inline-block;padding:1px 8px;border-radius:999px;
+             font-size:0.75rem;background:#f0f2f6;margin-right:6px}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("📡 輿情搜尋器")
+st.caption("輸入你想追蹤的主題,即時搜尋各平台的公開討論。")
+
+# ---------------- 側邊欄:搜尋條件 ----------------
+with st.sidebar:
+    st.header("搜尋條件")
+    kw_raw = st.text_input(
+        "關鍵字(可用逗號或空白分隔多個)",
+        placeholder="例如:某品牌, 某產品, 某議題",
+    )
+    platform_labels = st.multiselect(
+        "平台",
+        options=["PTT", "Reddit", "Dcard", "Threads", "Facebook"],
+        default=["PTT", "Reddit", "Dcard"],
+        help="PTT 不需金鑰、中文內容多。Reddit 建議設定官方憑證(見下方說明)。"
+        "Dcard 為非官方 API,常被 Cloudflare 擋。Threads / Facebook 需要對應 token。",
+    )
+    ptt_boards_raw = ""
+    if "PTT" in platform_labels:
+        ptt_boards_raw = st.text_input(
+            "PTT 看板(逗號分隔)",
+            value=secret("PTT_BOARDS", "Gossiping, WomenTalk, Boy-Girl"),
+            help="想搜哪些看板就填哪些,例如:Gossiping, WomenTalk, Boy-Girl, marriage",
         )
+    since_hours = st.slider("時間範圍(小時內)", 6, 720, 168, step=6)
+    limit = st.slider("每個平台最多筆數", 10, 50, 25, step=5)
+    min_score = st.number_input("最低讚數 / 分數", min_value=0, value=0, step=1)
+
+    st.header("AI 摘要")
+    has_key = bool(secret("ANTHROPIC_API_KEY"))
+    engine_options = ["不使用", "Ollama(本機 / 雲端 Kimi)", "Claude API"]
+    default_engine = 2 if has_key else 1
+    ai_engine = st.selectbox("摘要引擎", engine_options, index=default_engine)
+
+    ollama_api_key = secret("OLLAMA_API_KEY", "")
+    ollama_base_url = secret(
+        "OLLAMA_BASE_URL",
+        "https://ollama.com" if ollama_api_key else "http://localhost:11434",
+    )
+    ollama_model = secret("OLLAMA_MODEL", "kimi-k2")
+    if ai_engine.startswith("Ollama"):
+        ollama_api_key = st.text_input(
+            "API Key(Ollama 雲端版)",
+            value=ollama_api_key,
+            type="password",
+            help="用 Ollama Cloud(ollama.com)線上模型時填;跑本機 Ollama 則留空。",
+        )
+        if ollama_api_key and ollama_base_url == "http://localhost:11434":
+            ollama_base_url = "https://ollama.com"
+        ollama_base_url = st.text_input(
+            "Ollama 位址",
+            value=ollama_base_url,
+            help="雲端版:https://ollama.com;本機:http://localhost:11434",
+        )
+        ollama_model = st.text_input(
+            "模型名稱",
+            value=ollama_model,
+            help="填 ollama.com 上的模型名稱(雲端)或 `ollama list` 顯示的名稱(本機)。",
+        )
+        if ollama_api_key:
+            st.caption("☁️ 使用 Ollama Cloud:不需要本機開 Ollama,部署到雲端也能用。")
+        else:
+            st.caption("💻 本機模式:需要這台電腦的 Ollama 執行中;雲端部署時請改填 API Key。")
+    elif ai_engine == "Claude API" and not has_key:
+        st.caption("⚠️ 尚未設定 ANTHROPIC_API_KEY(Secrets 或環境變數),摘要會被略過。")
+
+    want_summary = ai_engine != "不使用"
+
+    search = st.button("🔍 搜尋", type="primary", use_container_width=True)
+
+
+def _build_config(keywords: list[str]) -> Config:
+    platforms: dict[str, PlatformConfig] = {}
+    fb_pages = [p for p in secret("FACEBOOK_PAGE_IDS", "").split(",") if p.strip()]
+    ptt_boards = [b.strip() for b in ptt_boards_raw.split(",") if b.strip()]
+    label_to_opts = {
+        "PTT": ("ptt", {"limit": limit, "boards": ptt_boards}),
+        "Reddit": ("reddit", {"limit": limit, "sort": "relevance"}),
+        "Dcard": ("dcard", {"limit": limit}),
+        "Threads": ("threads", {"limit": limit}),
+        "Facebook": ("facebook", {"limit": limit, "page_ids": fb_pages}),
+    }
+    for label in platform_labels:
+        name, opts = label_to_opts[label]
+        platforms[name] = PlatformConfig(enabled=True, options=opts)
 
     return Config(
         keywords=keywords,
         platforms=platforms,
-        since_hours=since_hours,
-        min_score=min_score,
-        summary_enabled=True,
-        summary_language=summary_language,
-        anthropic_api_key=get_secret("ANTHROPIC_API_KEY"),
-        reddit_client_id=get_secret("REDDIT_CLIENT_ID"),
-        reddit_client_secret=get_secret("REDDIT_CLIENT_SECRET"),
-        threads_access_token=get_secret("THREADS_ACCESS_TOKEN"),
-        facebook_access_token=get_secret("FACEBOOK_ACCESS_TOKEN"),
+        since_hours=int(since_hours),
+        min_score=int(min_score),
+        summary_enabled=want_summary,
+        summary_provider="ollama" if ai_engine.startswith("Ollama") else "anthropic",
+        summary_model=secret("SUMMARY_MODEL", "claude-opus-4-8"),
+        summary_language=secret("SUMMARY_LANGUAGE", "zh-TW"),
+        ollama_base_url=ollama_base_url,
+        ollama_model=ollama_model,
+        ollama_api_key=ollama_api_key,
+        anthropic_api_key=secret("ANTHROPIC_API_KEY"),
+        reddit_client_id=secret("REDDIT_CLIENT_ID"),
+        reddit_client_secret=secret("REDDIT_CLIENT_SECRET"),
+        threads_access_token=secret("THREADS_ACCESS_TOKEN"),
+        facebook_access_token=secret("FACEBOOK_ACCESS_TOKEN"),
     )
 
 
-def collect_posts(config: Config) -> list[Post]:
-    """跑所有啟用的 collector,回傳合併後的貼文清單。"""
-    posts: list[Post] = []
-    for collector in build_collectors(config):
-        posts.extend(collector.run(config.keywords))
-    if config.min_score > 0:
-        posts = [p for p in posts if p.score >= config.min_score]
-    posts.sort(
-        key=lambda p: p.created_at or datetime.now(timezone.utc),
-        reverse=True,
-    )
-    return posts
-
-
-def render_card(post: Post) -> None:
-    color = PLATFORM_COLORS.get(post.platform, "#666")
-    label = PLATFORM_LABELS.get(post.platform, post.platform)
-    when = (
-        post.created_at.astimezone().strftime("%Y-%m-%d %H:%M")
-        if post.created_at
-        else "時間未知"
-    )
-    title = (post.title or post.preview or "(無標題)").strip()
-    url = post.url or "#"
-
+def _render_post(p) -> None:
+    label, emoji = PLATFORM_META.get(p.platform, (p.platform, "•"))
+    when = p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "—"
+    title = (p.title or p.preview or "(無標題)").strip()
     st.markdown(
         f"""
-        <div style="border:1px solid #e6e6e6; border-radius:10px; padding:14px 16px;
-                    margin-bottom:12px; background:#fff;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <span style="background:{color}; color:#fff; padding:2px 8px;
-                         border-radius:12px; font-size:12px;">{label}</span>
-            <span style="color:#888; font-size:12px;">{when}</span>
-            {f'<span style="color:#888; font-size:12px;">· @{post.author}</span>' if post.author else ""}
-          </div>
-          <div style="font-size:15px; font-weight:600; margin-bottom:6px;">
-            <a href="{url}" target="_blank" style="color:#111; text-decoration:none;">{title}</a>
-          </div>
-          <div style="color:#555; font-size:13px; margin-bottom:8px;">{post.preview}</div>
-          <div style="color:#666; font-size:12px;">
-            👍 {post.score} · 💬 {post.num_comments}
-            {f' · 命中: {"、".join(post.matched_keywords)}' if post.matched_keywords else ""}
-          </div>
+        <div class="post-card">
+          <span class="badge">{emoji} {label}</span>
+          <a href="{p.url}" target="_blank"><b>{title}</b></a>
+          <div class="post-meta">🕒 {when} · 👍 {p.score} · 💬 {p.num_comments}
+          {'· 命中:' + '、'.join(p.matched_keywords) if p.matched_keywords else ''}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def main() -> None:
-    st.set_page_config(
-        page_title="輿情搜尋 · public-opinion",
-        page_icon="🗞️",
-        layout="wide",
-    )
-
-    st.title("🗞️ 輿情搜尋")
-    st.caption("從 Reddit / Dcard / Threads / Facebook 即時抓取關鍵字相關貼文。")
-
-    has_anthropic = bool(get_secret("ANTHROPIC_API_KEY"))
-
-    with st.sidebar:
-        st.header("搜尋條件")
-        keywords_raw = st.text_input(
-            "關鍵字(可用逗號分隔多個)",
-            value="",
-            placeholder="例:AI、Claude、電動車",
-        )
-        selected_platforms = st.multiselect(
-            "平台",
-            options=list(PLATFORM_LABELS.keys()),
-            default=["reddit", "dcard"],
-            format_func=lambda x: PLATFORM_LABELS[x],
-        )
-        since_hours = st.slider("時間範圍(最近幾小時)", 1, 168, 24)
-        min_score = st.number_input("最低讚數 / 分數", min_value=0, value=0, step=1)
-
-        if has_anthropic:
-            do_summary = st.checkbox("使用 Claude 產生 AI 摘要", value=False)
-        else:
-            do_summary = False
-            st.info("未偵測到 ANTHROPIC_API_KEY,略過 AI 摘要功能。", icon="ℹ️")
-
-        search = st.button("🔎 搜尋", type="primary", use_container_width=True)
-
-    if not search:
-        st.info("在左側輸入關鍵字並按「搜尋」開始。", icon="👈")
-        return
-
-    keywords = [k.strip() for k in keywords_raw.replace(",", ",").split(",") if k.strip()]
+# ---------------- 主畫面:執行搜尋 ----------------
+if search:
+    keywords = [k.strip() for k in kw_raw.replace(",", " ").split() if k.strip()]
     if not keywords:
-        st.warning("請至少輸入一個關鍵字。")
-        return
-    if not selected_platforms:
-        st.warning("請至少選擇一個平台。")
-        return
+        st.warning("請先輸入至少一個關鍵字。")
+        st.stop()
+    if not platform_labels:
+        st.warning("請至少選一個平台。")
+        st.stop()
 
-    config = build_runtime_config(
-        keywords=keywords,
-        selected_platforms=selected_platforms,
-        since_hours=int(since_hours),
-        min_score=int(min_score),
-    )
+    config = _build_config(keywords)
 
-    with st.spinner("正在抓取各平台貼文……"):
-        posts = collect_posts(config)
+    with st.spinner("搜尋中…"):
+        by_platform: dict[str, list] = {}
+        for collector in build_collectors(config):
+            by_platform[collector.name] = collector.run(keywords)
 
-    st.subheader(f"共 {len(posts)} 筆結果")
+    all_posts = [p for posts in by_platform.values() for p in posts]
+    if min_score > 0:
+        all_posts = [p for p in all_posts if p.score >= min_score]
+    all_posts.sort(key=lambda p: (p.score, p.num_comments), reverse=True)
 
-    if not posts:
-        st.warning("沒有抓到任何貼文,試試放寬時間範圍或換個關鍵字。")
-        return
+    # 各平台筆數摘要
+    cols = st.columns(max(len(by_platform), 1))
+    for col, (name, posts) in zip(cols, by_platform.items()):
+        label, emoji = PLATFORM_META.get(name, (name, "•"))
+        note = "(可能被擋)" if not posts and name == "dcard" else ""
+        col.metric(f"{emoji} {label}", f"{len(posts)} 筆", help=note or None)
 
-    if do_summary:
-        with st.spinner("Claude 正在產生摘要……"):
-            summary = generate_summary(posts, config)
+    st.divider()
+
+    if not all_posts:
+        st.info("沒有找到符合條件的貼文。可以試著放寬時間範圍、降低最低分數,或換個關鍵字。")
+        st.stop()
+
+    # AI 摘要
+    if want_summary:
+        engine_label = "Ollama" if config.summary_provider == "ollama" else "Claude"
+        with st.spinner(f"{engine_label} 產生摘要中…(本機模型可能需要一兩分鐘)"):
+            summary = generate_summary(all_posts, config)
         if summary:
-            with st.expander("🧠 AI 摘要", expanded=True):
-                st.markdown(summary)
+            st.subheader(f"🧠 AI 輿情摘要(by {engine_label})")
+            st.markdown(summary)
+            st.divider()
         else:
-            st.info("這次沒有產出摘要(可能是模型婉拒或設定問題)。", icon="ℹ️")
+            st.warning(
+                f"{engine_label} 摘要沒有產生。"
+                + (
+                    "請確認 Ollama 執行中、模型名稱正確(用 `ollama list` 查)。"
+                    if config.summary_provider == "ollama"
+                    else "請確認 ANTHROPIC_API_KEY 已設定。"
+                )
+            )
 
-    tabs = st.tabs(
-        [f"全部 ({len(posts)})"]
-        + [
-            f"{PLATFORM_LABELS[p]} ({sum(1 for x in posts if x.platform == p)})"
-            for p in selected_platforms
-        ]
+    st.subheader(f"共 {len(all_posts)} 筆(依熱度排序)")
+    for p in all_posts:
+        _render_post(p)
+else:
+    st.info("👈 在左邊輸入關鍵字、選擇平台,然後按「搜尋」。")
+    st.caption(
+        "提醒:Reddit 最穩定;Dcard 為非官方 API,雲端 IP 有時會被 Cloudflare 擋。"
+        "此工具僅供個人輿情觀察,請合理使用並遵守各平台服務條款。"
     )
-    with tabs[0]:
-        for post in posts:
-            render_card(post)
-    for i, plat in enumerate(selected_platforms, start=1):
-        with tabs[i]:
-            plat_posts = [p for p in posts if p.platform == plat]
-            if not plat_posts:
-                st.caption("這個平台這次沒抓到符合條件的貼文。")
-            for post in plat_posts:
-                render_card(post)
-
-
-if __name__ == "__main__":
-    main()

@@ -26,9 +26,13 @@ class Config:
     since_hours: int = 24
     min_score: int = 0
     summary_enabled: bool = True
+    summary_provider: str = "anthropic"  # "anthropic" 或 "ollama"
     summary_model: str = "claude-opus-4-8"
     summary_language: str = "zh-TW"
     summary_max_posts: int = 60
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "kimi-k2"
+    ollama_api_key: str = ""  # Ollama Cloud(https://ollama.com)的 API key;本機不需要
     output_dir: str = "reports"
     email_enabled: bool = False
     email_only_when_new: bool = True
@@ -85,9 +89,26 @@ def load_config(config_path: str, env_path: str = ".env") -> Config:
         since_hours=int(filters.get("since_hours", 24)),
         min_score=int(filters.get("min_score", 0)),
         summary_enabled=bool(summary.get("enabled", True)),
+        summary_provider=str(
+            os.environ.get("SUMMARY_PROVIDER") or summary.get("provider", "anthropic")
+        ),
         summary_model=str(summary.get("model", "claude-opus-4-8")),
         summary_language=str(summary.get("language", "zh-TW")),
         summary_max_posts=int(summary.get("max_posts", 60)),
+        ollama_base_url=str(
+            os.environ.get("OLLAMA_BASE_URL")
+            or summary.get("ollama_base_url")
+            # 有 API key 又沒指定位址 → 預設連 Ollama Cloud;否則連本機
+            or (
+                "https://ollama.com"
+                if os.environ.get("OLLAMA_API_KEY")
+                else "http://localhost:11434"
+            )
+        ),
+        ollama_model=str(
+            os.environ.get("OLLAMA_MODEL") or summary.get("ollama_model", "kimi-k2")
+        ),
+        ollama_api_key=os.environ.get("OLLAMA_API_KEY", ""),
         output_dir=str(output.get("dir", "reports")),
         email_enabled=bool(email.get("enabled", False)),
         email_only_when_new=bool(email.get("only_when_new", True)),

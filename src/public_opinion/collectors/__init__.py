@@ -6,12 +6,14 @@ from ..config import Config
 from .base import BaseCollector
 from .reddit import RedditCollector
 from .dcard import DcardCollector
+from .ptt import PttCollector
 from .threads import ThreadsCollector
 from .facebook import FacebookCollector
 
 _REGISTRY: dict[str, type[BaseCollector]] = {
     "reddit": RedditCollector,
     "dcard": DcardCollector,
+    "ptt": PttCollector,
     "threads": ThreadsCollector,
     "facebook": FacebookCollector,
 }

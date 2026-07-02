@@ -45,6 +45,43 @@ python -m public_opinion run --config config.yaml --dry-run
 
 ---
 
+## 🌐 互動搜尋網頁(Streamlit)
+
+除了每日自動報告,還有一個**可以在網頁上即時搜尋**的介面:輸入關鍵字、選平台、按搜尋,
+馬上看到各平台貼文,並可一鍵產生 AI 摘要。
+
+本機執行:
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+# 瀏覽器會自動開 http://localhost:8501
+```
+
+### 免費部署到雲端(全程用瀏覽器,不用終端機)
+
+用 **Streamlit Community Cloud** 把它變成一個任何時候都能開的網址:
+
+1. 到 <https://share.streamlit.io> → **Sign in with GitHub**(用你的 GitHub 登入)。
+2. 點 **Create app / New app** → 選 **Deploy a public app from GitHub**。
+3. 選 repository:`cph0512/public-opinion`,Branch:`main`,
+   Main file path:`streamlit_app.py`。
+4. (選用)點 **Advanced settings → Secrets**,貼上要用的金鑰,例如:
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ant-..."     # 要 AI 摘要才需要
+   REDDIT_CLIENT_ID = "..."             # 讓 Reddit 更穩定(選用)
+   REDDIT_CLIENT_SECRET = "..."
+   THREADS_ACCESS_TOKEN = "..."         # 要搜 Threads 才需要
+   FACEBOOK_ACCESS_TOKEN = "..."        # 要搜 Facebook 才需要
+   ```
+5. 按 **Deploy**。約一分鐘後會得到一個 `https://xxx.streamlit.app` 的網址,
+   之後打開它就能搜尋,不用再碰程式或終端機。
+
+> Threads / Facebook 沒填 token 就不會出現結果(平台限制);Reddit 最穩定,
+> Dcard 在雲端 IP 有時會被 Cloudflare 擋。
+
+---
+
 ## 設定(`config.yaml`)
 
 ```yaml

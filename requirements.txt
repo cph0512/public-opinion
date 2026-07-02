@@ -1,10 +1,7 @@
 requests>=2.31
 PyYAML>=6.0
+beautifulsoup4>=4.12
+# 互動式搜尋網頁
+streamlit>=1.31
 # 選用:AI 摘要(未安裝 / 未設定金鑰時會自動略過)
 anthropic>=0.40
-# 互動式搜尋網頁(streamlit_app.py 用)
-streamlit>=1.30
-# FastAPI 版網頁(app.py / Cloud Run 部署用)
-fastapi>=0.110
-uvicorn[standard]>=0.27
-jinja2>=3.1
