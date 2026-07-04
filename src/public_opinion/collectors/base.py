@@ -29,6 +29,7 @@ class BaseCollector:
         self.opts: PlatformConfig = config.platform(self.name)
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+        self.errors: list[str] = []  # 本次執行遇到的錯誤(給 UI 顯示用)
 
     # --- 子類別要實作 ---
     def collect(self, keywords: list[str], since: datetime) -> list[Post]:
@@ -36,14 +37,17 @@ class BaseCollector:
 
     # --- 提供給 runner 的統一入口(包好錯誤處理)---
     def run(self, keywords: list[str]) -> list[Post]:
+        self.errors = []
         since = utc_now() - timedelta(hours=self.config.since_hours)
         try:
             posts = self.collect(keywords, since)
         except requests.RequestException as exc:
             log.warning("[%s] 網路錯誤:%s", self.name, exc)
+            self.errors.append(f"網路錯誤:{exc}")
             return []
         except Exception as exc:  # noqa: BLE001 - 單一平台失敗不應中斷整體
             log.warning("[%s] 抓取失敗:%s", self.name, exc)
+            self.errors.append(f"抓取失敗:{exc}")
             return []
 
         # 時間過濾(有 created_at 才過濾;沒有的保留)

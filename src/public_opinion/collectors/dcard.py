@@ -39,6 +39,7 @@ class DcardCollector(BaseCollector):
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("[dcard] 搜尋「%s」失敗(可能被擋):%s", kw, exc)
+                self.errors.append(f"「{kw}」:{exc}")
                 continue
 
             if not isinstance(data, list):

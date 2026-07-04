@@ -29,6 +29,7 @@ class ThreadsCollector(BaseCollector):
         token = self.config.threads_access_token
         if not token:
             log.warning("[threads] 未設定 THREADS_ACCESS_TOKEN,略過。")
+            self.errors.append("未設定 THREADS_ACCESS_TOKEN(需要 Meta 開發者 token)")
             return []
 
         search_type = str(self.opts.get("search_type", "TOP"))
@@ -50,6 +51,7 @@ class ThreadsCollector(BaseCollector):
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("[threads] 搜尋「%s」失敗:%s", kw, exc)
+                self.errors.append(f"「{kw}」:{exc}")
                 continue
 
             for item in data.get("data", []):

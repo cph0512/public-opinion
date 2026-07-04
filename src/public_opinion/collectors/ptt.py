@@ -57,6 +57,7 @@ class PttCollector(BaseCollector):
                     resp.raise_for_status()
                 except Exception as exc:  # noqa: BLE001
                     log.warning("[ptt] %s 搜尋「%s」失敗:%s", board, kw, exc)
+                    self.errors.append(f"{board}/「{kw}」:{exc}")
                     continue
 
                 parsed = self._parse_list(resp.text, board, kw, keywords)

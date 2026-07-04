@@ -193,8 +193,11 @@ if search:
 
     with st.spinner("搜尋中…"):
         by_platform: dict[str, list] = {}
+        platform_errors: dict[str, list] = {}
         for collector in build_collectors(config):
             by_platform[collector.name] = collector.run(keywords)
+            if collector.errors:
+                platform_errors[collector.name] = collector.errors
 
     all_posts = [p for posts in by_platform.values() for p in posts]
     if min_score > 0:
@@ -205,8 +208,24 @@ if search:
     cols = st.columns(max(len(by_platform), 1))
     for col, (name, posts) in zip(cols, by_platform.items()):
         label, emoji = PLATFORM_META.get(name, (name, "•"))
-        note = "(可能被擋)" if not posts and name == "dcard" else ""
-        col.metric(f"{emoji} {label}", f"{len(posts)} 筆", help=note or None)
+        status = "⚠️ 失敗" if (not posts and platform_errors.get(name)) else f"{len(posts)} 筆"
+        col.metric(f"{emoji} {label}", status)
+
+    # 失敗原因說明(0 筆時分得清「沒人討論」vs「被擋」)
+    for name, errs in platform_errors.items():
+        if by_platform.get(name):
+            continue  # 有拿到結果就不用警告
+        label, emoji = PLATFORM_META.get(name, (name, "•"))
+        first = str(errs[0])
+        if name == "reddit" and ("403" in first or "未設定 REDDIT" in first):
+            hint = "→ 需要免費申請 Reddit API 憑證(reddit.com/prefs/apps),填入後即可正常搜尋。"
+        elif name == "dcard" and ("403" in first or "Forbidden" in first):
+            hint = "→ Dcard 的 Cloudflare 擋掉了雲端主機的請求,無憑證可解;請以 PTT 為主。"
+        elif name == "threads":
+            hint = "→ 需要 Meta 開發者 token(見 README)。"
+        else:
+            hint = ""
+        st.warning(f"{emoji} **{label}**:{first[:160]}\n\n{hint}")
 
     st.divider()
 

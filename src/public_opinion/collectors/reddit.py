@@ -37,6 +37,10 @@ class RedditCollector(BaseCollector):
         cid = self.config.reddit_client_id
         secret = self.config.reddit_client_secret
         if not (cid and secret):
+            self.errors.append(
+                "未設定 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET,"
+                "改用公開 API(雲端 IP 常被 403 擋)"
+            )
             return None
         try:
             resp = self.session.post(

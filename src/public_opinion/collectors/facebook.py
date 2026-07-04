@@ -31,6 +31,7 @@ class FacebookCollector(BaseCollector):
         token = self.config.facebook_access_token
         if not token:
             log.warning("[facebook] 未設定 FACEBOOK_ACCESS_TOKEN,略過。")
+            self.errors.append("未設定 FACEBOOK_ACCESS_TOKEN")
             return []
 
         page_ids = self.opts.get("page_ids") or []
